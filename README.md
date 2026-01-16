@@ -77,7 +77,7 @@ By default, OCI artifacts are tagged as `{chartName}-{version}` (e.g., `ghost-on
 
 ```yaml
       - name: Run chart-releaser
-        uses: bitdeps/helm-oci-charts-releaser@v0.1.5
+        uses: sredevopsorg/helm-oci-charts-releaser@v0.1.0
         with:
             oci_registry: ghcr.io/username
             oci_username: username
