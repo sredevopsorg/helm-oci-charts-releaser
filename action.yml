@@ -16,27 +16,27 @@ name: "Helm OCI Charts Releaser"
 description: "Publish multiple Helm charts into an OCI registry"
 author: "dennybaa"
 branding:
-  color: blue
+  color: black
   icon: anchor
 inputs:
   version:
-    description: "The chart-releaser version to use (default: v3.13.2)"
+    description: "The chart-releaser version to use (default: v3.19.4)"
     required: false
     default: v3.19.4
   charts_dir:
-    description: The chart(s) directory
+    description: "The chart(s) directory"
     required: false
   oci_registry:
-    description: The OCI registry host
+    description: "The OCI registry host"
     required: true
   oci_username:
-    description: The username used to login to the OCI registry
+    description: "The username used to login to the OCI registry"
     required: true
   oci_password:
-    description: The OCI user's password
+    description: "The OCI user's password"
     required: true
   github_token:
-    description: Github Actions token must be provided to manage release creation and update
+    description: "Github Actions token must be provided to manage release creation and update"
     required: true
   install_dir:
     description: "Helm installation directory"
@@ -63,6 +63,10 @@ inputs:
   tag_name_pattern:
     description: "Specifies GitHub repository release naming pattern (ex. '{chartName}-chart')"
     required: false
+  oci_tag_pattern:
+    description: "Specifies OCI artifact tag pattern (ex. '{chartName}-{version}'). Default: '{chartName}-{version}'"
+    required: false
+    default: "{chartName}-{version}"
   skip_gh_release:
     description: "Skip the GitHub release creation"
     required: false
@@ -121,6 +125,10 @@ runs:
 
         if [[ -n "${{ inputs.tag_name_pattern }}" ]]; then
             args+=(--tag-name-pattern "${{ inputs.tag_name_pattern }}")
+        fi
+
+        if [[ -n "${{ inputs.oci_tag_pattern }}" ]]; then
+            args+=(--oci-tag-pattern "${{ inputs.oci_tag_pattern }}")
         fi
         
         if [[ -n "${{ inputs.skip_gh_release }}" ]]; then

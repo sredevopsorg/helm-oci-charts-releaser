@@ -35,6 +35,7 @@ Usage: $(basename "$0") <options>
     -u, --oci-username            The username used to login to the OCI registry
     -r, --oci-registry            The OCI registry
     -t, --tag-name-pattern        Specifies GitHub repository release naming pattern (ex. '{chartName}-chart')
+        --oci-tag-pattern         Specifies OCI artifact tag pattern (ex. '{chartName}-{version}', default: '{chartName}-{version}')
         --install-dir             Specifies custom install dir
         --skip-helm-install       Skip helm installation (default: false)
         --skip-dependencies       Skip dependencies update from "Chart.yaml" to dir "charts/" before packaging (default: false)
@@ -63,6 +64,7 @@ main() {
   local skip_oci_login=false
   local mark_as_latest=true
   local tag_name_pattern=
+  local oci_tag_pattern="{chartName}-{version}"
   local skip_gh_release
   local repo_root=
 
@@ -205,6 +207,12 @@ parse_command_line() {
         shift
       fi
       ;;
+    --oci-tag-pattern)
+      if [[ -n "${2:-}" ]]; then
+        oci_tag_pattern="$2"
+        shift
+      fi
+      ;;
     --skip-gh-release)
       if [[ -n "${2:-}" ]]; then
         skip_gh_release="$2"
@@ -235,6 +243,12 @@ parse_command_line() {
 
   if [[ -n $tag_name_pattern && $tag_name_pattern != *"{chartName}"* ]]; then
     echo "ERROR: Name pattern must contain '{chartName}' field." >&2
+    show_help
+    exit 1
+  fi
+
+  if [[ -n $oci_tag_pattern && $oci_tag_pattern != *"{chartName}"* && $oci_tag_pattern != *"{version}"* ]]; then
+    echo "ERROR: OCI tag pattern must contain at least '{chartName}' or '{version}' field." >&2
     show_help
     exit 1
   fi
@@ -353,6 +367,15 @@ release_tag() {
   echo "${tag:-$name}-$version"
 }
 
+# get OCI artifact tag
+oci_artifact_tag() {
+  local name="$1" version="$2"
+  local tag="$oci_tag_pattern"
+  tag="${tag//\{chartName\}/$name}"
+  tag="${tag//\{version\}/$version}"
+  echo "$tag"
+}
+
 release_exists() {
   local tag="$1"
   # fields: release tagName date
@@ -360,8 +383,9 @@ release_exists() {
 }
 
 release_chart() {
-  local releaseExists flags tag chart_package chart="$1" name="$2" version="$3" desc="$4"
+  local releaseExists flags tag oci_tag chart_package chart="$1" name="$2" version="$3" desc="$4"
   tag=$(release_tag "$name" "$version")
+  oci_tag=$(oci_artifact_tag "$name" "$version")
   chart_package="${install_dir}/package/${chart}/${name}-${version}.tgz"
   releaseExists=$(release_exists "$tag")
 
@@ -370,7 +394,8 @@ release_chart() {
     return
   fi
 
-  dry_run helm push "${chart_package}" "oci://${oci_registry#oci://}"
+  echo "Pushing chart to OCI registry with tag: ${oci_tag}..."
+  dry_run helm push "${chart_package}" "oci://${oci_registry#oci://}" --version "${oci_tag}"
 
   if (! $releaseExists && ! $skip_gh_release); then
     # shellcheck disable=SC2086

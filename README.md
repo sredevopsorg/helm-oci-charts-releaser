@@ -20,6 +20,7 @@ A GitHub action for single chart or multi-chart repositories that performs push 
 - **`oci_password`**: The OCI user's password
 - **`github-token`**: Github Actions token must be provided to manage release creation and update.
 - `tag_name_pattern`: Specifies GitHub repository release naming pattern (ex. '{chartName}-chart'). For instance you chart is named as app, but you want it to be released as *app-chart-x.y.z*, use *tag_name_pattern* `{chartName}-chart`.
+- `oci_tag_pattern`: Specifies OCI artifact tag pattern (ex. '{chartName}-{version}'). Default: `{chartName}-{version}`. This controls the tag applied to the OCI artifact (the part after the colon in `oci://registry/repo:tag`).
 - `skip_helm_install`: Skip helm installation (default: false)
 - `skip_dependencies`: Skip dependencies update from "Chart.yaml" to dir "charts/" before packaging (default: false)
 - `skip_existing`: Skip the chart push if the GithHub release exists
@@ -69,6 +70,31 @@ jobs:
             oci_password: ${{ secrets.GITHUB_TOKEN }}
             github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+### Custom OCI Tag Pattern
+
+By default, OCI artifacts are tagged as `{chartName}-{version}` (e.g., `ghost-on-kubernetes-1.0.0`). You can customize this:
+
+```yaml
+      - name: Run chart-releaser
+        uses: sredevopsorg/helm-oci-charts-releaser@v0.1.0
+        with:
+            oci_registry: ghcr.io/username
+            oci_username: username
+            oci_password: ${{ secrets.GITHUB_TOKEN }}
+            github_token: ${{ secrets.GITHUB_TOKEN }}
+            oci_tag_pattern: "{chartName}-v{version}"  # Results in: ghost-on-kubernetes-v1.0.0
+```
+
+**Available pattern variables:**
+- `{chartName}` - Chart name from Chart.yaml
+- `{version}` - Chart version from Chart.yaml
+
+**Examples:**
+- `{version}` → `1.0.0` (Helm standard)
+- `{chartName}-{version}` → `ghost-on-kubernetes-1.0.0` (default)
+- `v{version}` → `v1.0.0`
+- `{chartName}-v{version}` → `ghost-on-kubernetes-v1.0.0`
 
 This uses under the hood uses Helm and gh cli (which is available to actions). Helm is used to login and push charts into an OCI registry, while gh cli is used to create and update the repository releases.
 
