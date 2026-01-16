@@ -383,7 +383,7 @@ release_exists() {
 }
 
 release_chart() {
-  local releaseExists flags tag oci_tag chart_package chart="$1" name="$2" version="$3" desc="$4"
+  local releaseExists flags tag oci_tag chart_package retagged_package chart="$1" name="$2" version="$3" desc="$4"
   tag=$(release_tag "$name" "$version")
   oci_tag=$(oci_artifact_tag "$name" "$version")
   chart_package="${install_dir}/package/${chart}/${name}-${version}.tgz"
@@ -394,8 +394,31 @@ release_chart() {
     return
   fi
 
-  echo "Pushing chart to OCI registry with tag: ${oci_tag}..."
-  dry_run helm push "${chart_package}" "oci://${oci_registry#oci://}" --version "${oci_tag}"
+  # If OCI tag differs from chart version, repackage with custom version
+  if [[ "$oci_tag" != "$version" ]]; then
+    echo "Repackaging chart with custom OCI tag: ${oci_tag}..."
+    local temp_dir="${install_dir}/repackage/${chart}"
+    mkdir -p "$temp_dir"
+    
+    # Extract chart
+    tar -xzf "$chart_package" -C "$temp_dir"
+    
+    # Update Chart.yaml version
+    sed -i "s/^version: .*/version: ${oci_tag}/" "$temp_dir/${name}/Chart.yaml"
+    
+    # Repackage
+    retagged_package="${temp_dir}/${name}-${oci_tag}.tgz"
+    helm package "$temp_dir/${name}" -d "$temp_dir" >/dev/null
+    
+    echo "Pushing chart to OCI registry with tag: ${oci_tag}..."
+    dry_run helm push "${retagged_package}" "oci://${oci_registry#oci://}"
+    
+    # Cleanup
+    rm -rf "$temp_dir"
+  else
+    echo "Pushing chart to OCI registry with tag: ${oci_tag}..."
+    dry_run helm push "${chart_package}" "oci://${oci_registry#oci://}"
+  fi
 
   if (! $releaseExists && ! $skip_gh_release); then
     # shellcheck disable=SC2086
