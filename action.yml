@@ -70,6 +70,27 @@ inputs:
   skip_gh_release:
     description: "Skip the GitHub release creation"
     required: false
+  cosign_sign:
+    description: "Sign each pushed OCI chart with cosign (default: false)"
+    required: false
+    default: false
+  cosign_version:
+    description: "The cosign version to install (default: v3.1.4)"
+    required: false
+    default: v3.1.4
+  cosign_key:
+    description: "Path or URI to a cosign private key passed to 'cosign sign --key' (e.g. cosign.key, env://COSIGN_PRIVATE_KEY, awskms://...). Leave empty for keyless signing."
+    required: false
+  cosign_key_password:
+    description: "Password for the cosign private key. Exported as COSIGN_PASSWORD; never passed on the command line."
+    required: false
+  cosign_extra_args:
+    description: "Additional whitespace-separated arguments appended to 'cosign sign' (e.g. '--tlog-upload=false -a env=prod')"
+    required: false
+  skip_cosign_install:
+    description: "Skip cosign installation and use an existing cosign from PATH (default: false)"
+    required: false
+    default: false
 outputs:
   changed_charts:
     description: "A comma-separated list of charts that were released on this run. Will be an empty string if no updates were detected, will be unset if `--skip_packaging` is used: in the latter case your custom packaging step is responsible for setting its own outputs if you need them."
@@ -135,6 +156,26 @@ runs:
             args+=(--skip-gh-release "${{ inputs.skip_gh_release }}")
         fi
 
+        if [[ -n "${{ inputs.cosign_sign }}" ]]; then
+            args+=(--cosign-sign "${{ inputs.cosign_sign }}")
+        fi
+
+        if [[ -n "${{ inputs.cosign_version }}" ]]; then
+            args+=(--cosign-version "${{ inputs.cosign_version }}")
+        fi
+
+        if [[ -n "${{ inputs.cosign_key }}" ]]; then
+            args+=(--cosign-key "${{ inputs.cosign_key }}")
+        fi
+
+        if [[ -n "${{ inputs.cosign_extra_args }}" ]]; then
+            args+=(--cosign-extra-args "${{ inputs.cosign_extra_args }}")
+        fi
+
+        if [[ -n "${{ inputs.skip_cosign_install }}" ]]; then
+            args+=(--skip-cosign-install "${{ inputs.skip_cosign_install }}")
+        fi
+
         export GITHUB_TOKEN="${{ inputs.github_token }}"
         export OCI_PASSWORD="${{ inputs.oci_password }}"
         "$GITHUB_ACTION_PATH/cr.sh" "${args[@]}"
@@ -147,3 +188,5 @@ runs:
         fi
         rm -f changed_charts.txt chart_version.txt
       shell: bash
+      env:
+        COSIGN_PASSWORD: ${{ inputs.cosign_key_password }}

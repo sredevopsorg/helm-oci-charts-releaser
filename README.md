@@ -27,6 +27,12 @@ A GitHub action for single chart or multi-chart repositories that performs push 
 - `skip_oci_login`: Skip the OCI login step (rely on existing credentials)
 - `mark_as_latest`: When you set this to `false`, it will mark the created GitHub release not as 'latest'.
 - `skip_gh_release`: Skip the GitHub release creation
+- `cosign_sign`: Sign each pushed OCI chart with cosign (default: false)
+- `cosign_version`: The cosign version to install (default: v3.1.4)
+- `cosign_key`: Path or URI to a cosign private key (for example `cosign.key`, `env://COSIGN_PRIVATE_KEY`, or a KMS URI). Leave empty for keyless signing.
+- `cosign_key_password`: Password for an encrypted `cosign_key`. It is exported as `COSIGN_PASSWORD` and never passed on the command line.
+- `cosign_extra_args`: Additional whitespace-separated arguments appended to `cosign sign` (for example `--tlog-upload=false -a env=prod`).
+- `skip_cosign_install`: Skip cosign installation and use an existing `cosign` from `PATH`
 
 ### Outputs
 
@@ -95,6 +101,100 @@ By default, OCI artifacts are tagged as `{chartName}-{version}` (e.g., `ghost-on
 - `{chartName}-{version}` → `ghost-on-kubernetes-1.0.0` (default)
 - `v{version}` → `v1.0.0`
 - `{chartName}-v{version}` → `ghost-on-kubernetes-v1.0.0`
+
+## Signing OCI charts with cosign
+
+Signing is optional and disabled by default. When `cosign_sign` is `true`, every chart is signed **by digest** immediately after `helm push` succeeds and before the GitHub release is created. A signing failure fails the run, so an unsigned chart is never paired with a published release.
+
+The action signs the OCI artifact itself (`<registry>/<path>/<chart>@sha256:...`). Signing the `.tgz` assets attached to the GitHub release is not part of this feature.
+
+### Keyless signing (recommended for GitHub Actions)
+
+Keyless signing uses GitHub's OIDC token, so the workflow needs `id-token: write`:
+
+```yaml
+name: Release Charts
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write   # required for keyless cosign signing
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Run chart-releaser
+        uses: sredevopsorg/helm-oci-charts-releaser@v0.1.0
+        with:
+          oci_registry: ghcr.io/username
+          oci_username: username
+          oci_password: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          cosign_sign: true
+```
+
+No `cosign_key` is required. Cosign is installed from the pinned `cosign_version` and its SHA-256 is verified against the GitHub release asset digest before use.
+
+### Key-based signing
+
+For environments without an OIDC provider, or to use an existing key pair:
+
+```yaml
+      - name: Write cosign key
+        run: |
+          printf '%s' "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
+          chmod 600 cosign.key
+
+      - name: Run chart-releaser
+        uses: sredevopsorg/helm-oci-charts-releaser@v0.1.0
+        with:
+          oci_registry: ghcr.io/username
+          oci_username: username
+          oci_password: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          cosign_sign: true
+          cosign_key: cosign.key
+          cosign_key_password: ${{ secrets.COSIGN_PASSWORD }}
+
+      - name: Remove cosign key
+        if: always()
+        run: rm -f cosign.key
+```
+
+You can also avoid the temporary file by setting `COSIGN_PRIVATE_KEY` on the step and passing `cosign_key: env://COSIGN_PRIVATE_KEY`.
+
+### Verifying a signed chart
+
+Signing is pinned to the pushed digest. Use the digest printed by Helm:
+
+```bash
+# Keyless (GitHub Actions OIDC)
+cosign verify ghcr.io/username/charts/demo@sha256:<digest> \
+  --certificate-identity-regexp 'https://github.com/<org>/<repo>/.github/workflows/<workflow>.yml@refs/heads/main' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# Key-based
+cosign verify --key cosign.pub ghcr.io/username/charts/demo@sha256:<digest>
+```
+
+### Notes
+
+- The action reuses `oci_username` / `oci_password` for cosign. When the action performs the login, the Docker credentials are isolated under `<install_dir>/.docker` so the runner's `~/.docker/config.json` and Helm's registry config are left untouched.
+- With `skip_oci_login: true`, no cosign login is performed. The runner must already have Docker credentials that cosign can read (Helm's own registry config is not shared with cosign).
+- Cosign v3 stores signatures as OCI 1.1 referring artifacts by default. Pin `cosign_version: v2.6.2` if your registry or verification tooling requires legacy `.sig` tags.
+- Use `cosign_extra_args` for registry-specific flags such as `--allow-http-registry`, `--tlog-upload=false`, or annotations (`-a key=value`).
+- `--skip-cosign-install` is available when cosign is preinstalled in the runner image.
 
 This uses under the hood uses Helm and gh cli (which is available to actions). Helm is used to login and push charts into an OCI registry, while gh cli is used to create and update the repository releases.
 
